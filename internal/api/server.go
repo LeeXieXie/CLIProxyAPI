@@ -896,7 +896,7 @@ func (s *Server) UpdateClients(cfg *config.Config) {
 			if persistDir == "" {
 				persistDir = filepath.Dir(s.configFilePath)
 			}
-			usage.InitPersistence(persistDir, 0)
+			usage.InitPersistenceDB(persistDir, 0, 0)
 		}
 	}
 

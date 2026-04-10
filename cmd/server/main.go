@@ -423,7 +423,7 @@ func main() {
 		if persistDir == "" {
 			persistDir = filepath.Dir(configFilePath)
 		}
-		usage.InitPersistence(persistDir, 0)
+		usage.InitPersistenceDB(persistDir, 0, 0)
 	}
 	coreauth.SetQuotaCooldownDisabled(cfg.DisableCooling)
 
