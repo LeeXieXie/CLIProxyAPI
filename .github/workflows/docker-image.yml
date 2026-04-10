@@ -12,6 +12,7 @@ env:
 jobs:
   docker_amd64:
     runs-on: ubuntu-latest
+    if: ${{ secrets.DOCKERHUB_USERNAME != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,6 +48,7 @@ jobs:
 
   docker_arm64:
     runs-on: ubuntu-24.04-arm
+    if: ${{ secrets.DOCKERHUB_USERNAME != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -82,6 +84,7 @@ jobs:
 
   docker_manifest:
     runs-on: ubuntu-latest
+    if: ${{ secrets.DOCKERHUB_USERNAME != '' }}
     needs:
       - docker_amd64
       - docker_arm64
