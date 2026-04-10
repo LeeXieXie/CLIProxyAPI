@@ -65,6 +65,10 @@ type Config struct {
 	// UsageStatisticsEnabled toggles in-memory usage aggregation; when false, usage data is discarded.
 	UsageStatisticsEnabled bool `yaml:"usage-statistics-enabled" json:"usage-statistics-enabled"`
 
+	// UsageRetentionDays controls how many days of request details are kept in the SQLite database.
+	// Rows older than this value are pruned on every flush. 0 means use the default (90 days).
+	UsageRetentionDays int `yaml:"usage-retention-days" json:"usage-retention-days"`
+
 	// DisableCooling disables quota cooldown scheduling when true.
 	DisableCooling bool `yaml:"disable-cooling" json:"disable-cooling"`
 

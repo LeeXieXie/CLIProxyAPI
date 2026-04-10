@@ -3,9 +3,11 @@ package management
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/router-for-me/CLIProxyAPI/v6/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/usage"
 )
 
@@ -43,6 +45,110 @@ func (h *Handler) ExportUsageStatistics(c *gin.Context) {
 		ExportedAt: time.Now().UTC(),
 		Usage:      snapshot,
 	})
+}
+
+// GetUsageDetails returns a flat list of all individual request details,
+// optionally filtered by ?api=...&model=...&limit=N.
+func (h *Handler) GetUsageDetails(c *gin.Context) {
+	if h == nil || h.usageStats == nil {
+		c.JSON(http.StatusOK, gin.H{"details": []struct{}{}})
+		return
+	}
+	apiFilter := c.Query("api")
+	modelFilter := c.Query("model")
+	limitStr := c.DefaultQuery("limit", "500")
+	limit, _ := strconv.Atoi(limitStr)
+	if limit <= 0 || limit > 10000 {
+		limit = 500
+	}
+
+	snap := h.usageStats.Snapshot()
+
+	type detailItem struct {
+		API       string             `json:"api"`
+		Model     string             `json:"model"`
+		Timestamp time.Time          `json:"timestamp"`
+		LatencyMs int64              `json:"latency_ms"`
+		Source    string             `json:"source"`
+		AuthIndex string             `json:"auth_index"`
+		Failed    bool               `json:"failed"`
+		Tokens    usage.TokenStats   `json:"tokens"`
+	}
+
+	var items []detailItem
+	for apiKey, apiSnap := range snap.APIs {
+		if apiFilter != "" && apiKey != apiFilter {
+			continue
+		}
+		for model, modelSnap := range apiSnap.Models {
+			if modelFilter != "" && model != modelFilter {
+				continue
+			}
+			for _, d := range modelSnap.Details {
+				items = append(items, detailItem{
+					API:       apiKey,
+					Model:     model,
+					Timestamp: d.Timestamp,
+					LatencyMs: d.LatencyMs,
+					Source:    d.Source,
+					AuthIndex: d.AuthIndex,
+					Failed:    d.Failed,
+					Tokens:    d.Tokens,
+				})
+			}
+		}
+	}
+
+	// Sort newest-first
+	for i, j := 0, len(items)-1; i < j; i, j = i+1, j-1 {
+		items[i], items[j] = items[j], items[i]
+	}
+	if len(items) > limit {
+		items = items[:limit]
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"total":   len(items),
+		"limit":   limit,
+		"details": items,
+	})
+}
+
+// GetUsageRetention returns the current retention days setting.
+func (h *Handler) GetUsageRetention(c *gin.Context) {
+	days := 90
+	if h != nil && h.cfg != nil {
+		if h.cfg.UsageRetentionDays > 0 {
+			days = h.cfg.UsageRetentionDays
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"retention_days": days})
+}
+
+// PutUsageRetention updates the retention days setting and persists it to config.yaml.
+func (h *Handler) PutUsageRetention(c *gin.Context) {
+	if h == nil || h.cfg == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "config unavailable"})
+		return
+	}
+	var body struct {
+		RetentionDays int `json:"retention_days"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+		return
+	}
+	if body.RetentionDays < 1 || body.RetentionDays > 3650 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "retention_days must be between 1 and 3650"})
+		return
+	}
+	h.cfg.UsageRetentionDays = body.RetentionDays
+	if err := config.SaveConfigPreserveComments(h.configFilePath, h.cfg); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save config"})
+		return
+	}
+	usage.UpdateRetentionDays(body.RetentionDays)
+	c.JSON(http.StatusOK, gin.H{"retention_days": body.RetentionDays})
 }
 
 // ImportUsageStatistics merges a previously exported usage snapshot into memory.

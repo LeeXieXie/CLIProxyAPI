@@ -337,3 +337,15 @@ func StopPersistenceDB() {
 		p.Stop()
 	}
 }
+
+// UpdateRetentionDays changes the rolling-window retention on the running SQLite plugin.
+// The new value takes effect on the next flush.  Falls back to the JSON plugin if SQLite
+// was not initialised.
+func UpdateRetentionDays(days int) {
+	if days < 1 {
+		days = 90
+	}
+	if p := defaultSQLitePlugin; p != nil {
+		p.maxAgeDays = days
+	}
+}
