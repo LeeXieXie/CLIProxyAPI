@@ -1,0 +1,39 @@
+name: Sync upstream
+
+on:
+  schedule:
+    # 每天北京时间 08:00 (UTC 00:00)
+    - cron: '0 0 * * *'
+  workflow_dispatch: # 允许手动触发
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: git remote add upstream https://github.com/router-for-me/CLIProxyAPI.git
+
+      - name: Fetch upstream
+        run: git fetch upstream
+
+      - name: Rebase main onto upstream/main
+        run: |
+          git checkout main
+          git rebase upstream/main
+
+      - name: Push updated main
+        run: git push origin main --force-with-lease

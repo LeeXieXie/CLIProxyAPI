@@ -891,6 +891,13 @@ func (s *Server) UpdateClients(cfg *config.Config) {
 
 	if oldCfg == nil || oldCfg.UsageStatisticsEnabled != cfg.UsageStatisticsEnabled {
 		usage.SetStatisticsEnabled(cfg.UsageStatisticsEnabled)
+		if cfg.UsageStatisticsEnabled {
+			persistDir := util.WritablePath()
+			if persistDir == "" {
+				persistDir = filepath.Dir(s.configFilePath)
+			}
+			usage.InitPersistence(persistDir, 0)
+		}
 	}
 
 	if s.requestLogger != nil && (oldCfg == nil || oldCfg.ErrorLogsMaxFiles != cfg.ErrorLogsMaxFiles) {

@@ -418,6 +418,13 @@ func main() {
 		}
 	}
 	usage.SetStatisticsEnabled(cfg.UsageStatisticsEnabled)
+	if cfg.UsageStatisticsEnabled {
+		persistDir := writableBase
+		if persistDir == "" {
+			persistDir = filepath.Dir(configFilePath)
+		}
+		usage.InitPersistence(persistDir, 0)
+	}
 	coreauth.SetQuotaCooldownDisabled(cfg.DisableCooling)
 
 	if err = logging.ConfigureLogOutput(cfg); err != nil {
