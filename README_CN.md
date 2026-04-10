@@ -68,6 +68,31 @@ GLM CODING PLAN 是专为AI编码打造的订阅套餐，每月最低仅需20元
 - 通过配置接入上游 OpenAI 兼容提供商（例如 OpenRouter）
 - 可复用的 Go SDK（见 `docs/sdk-usage_CN.md`）
 
+## 使用统计持久化（Fork 功能）
+
+> 此功能位于 `feat/usage-persistence-plugin` 分支，**不属于**上游 `main` 分支。
+
+`management.html#/usage` 页面的使用统计现在可以**在服务器重启后保留**。数据会保存到配置目录下的 JSON 文件，并在启动时自动加载。
+
+### 工作原理
+
+- 轻量级插件（`internal/usage/persistence_plugin.go`）挂载到现有的使用事件系统，核心逻辑零改动。
+- 统计数据每 **5 分钟**刷新一次，并在优雅关闭时写入磁盘。
+- 启动时，已保存的快照会合并到内存计数器（去重安全）。
+- 采用原子写入模式（先写临时文件再重命名），防止崩溃时文件损坏。
+
+### 启用 / 禁用
+
+在 **管理面板 → 系统配置（`#/config`）→ 使用统计** 开关切换，或在 `config.yaml` 中设置：
+
+```yaml
+usage-statistics-enabled: true
+```
+
+持久化文件会创建在 `config.yaml` 同级目录下（即工作目录中的 `usage_stats.json`）。
+
+---
+
 ## 新手入门
 
 CLIProxyAPI 用户手册： [https://help.router-for.me/](https://help.router-for.me/cn/)
