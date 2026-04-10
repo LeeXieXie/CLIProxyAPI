@@ -70,6 +70,31 @@ VisionCoder is also offering our users a limited-time <a href="https://coder.vis
 - OpenAI-compatible upstream providers via config (e.g., OpenRouter)
 - Reusable Go SDK for embedding the proxy (see `docs/sdk-usage.md`)
 
+## Usage Statistics Persistence (Fork Feature)
+
+> This feature is available in the `feat/usage-persistence-plugin` branch and is **not** part of the upstream `main` branch.
+
+Usage statistics at `management.html#/usage` now **survive server restarts**. The data is saved to a JSON file in your config directory and automatically reloaded on startup.
+
+### How it works
+
+- A lightweight plugin (`internal/usage/persistence_plugin.go`) hooks into the existing usage event system — zero changes to core logic.
+- Statistics are flushed to `usage_stats.json` every **5 minutes** and on graceful shutdown.
+- On startup, the saved snapshot is merged into the in-memory counters (deduplication-safe).
+- Atomic write pattern (write-then-rename) prevents file corruption on crash.
+
+### Enable / Disable
+
+Toggle via **Management Panel → System Configuration (`#/config`) → Usage Statistics** or set in `config.yaml`:
+
+```yaml
+usage-statistics-enabled: true
+```
+
+The persistence file is created alongside `config.yaml` in your working directory (e.g. `usage_stats.json`).
+
+---
+
 ## Getting Started
 
 CLIProxyAPI Guides: [https://help.router-for.me/](https://help.router-for.me/)
