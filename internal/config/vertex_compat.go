@@ -9,6 +9,10 @@ import "strings"
 //
 // Example services: zenmux.ai and similar Vertex-compatible providers.
 type VertexCompatKey struct {
+	// Label is a user-defined display name for this configuration entry.
+	// When set, it is shown as the custom entry name in the management UI.
+	Label string `yaml:"label,omitempty" json:"label,omitempty"`
+
 	// APIKey is the authentication key for accessing the Vertex-compatible API.
 	// Maps to the x-goog-api-key header.
 	APIKey string `yaml:"api-key" json:"api-key"`
@@ -69,6 +73,7 @@ func (cfg *Config) SanitizeVertexCompatKeys() {
 		if entry.APIKey == "" {
 			continue
 		}
+		entry.Label = strings.TrimSpace(entry.Label)
 		entry.Prefix = normalizeModelPrefix(entry.Prefix)
 		entry.BaseURL = strings.TrimSpace(entry.BaseURL)
 		entry.ProxyURL = strings.TrimSpace(entry.ProxyURL)

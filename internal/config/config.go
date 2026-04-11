@@ -370,6 +370,10 @@ type CloakConfig struct {
 // ClaudeKey represents the configuration for a Claude API key,
 // including the API key itself and an optional base URL for the API endpoint.
 type ClaudeKey struct {
+	// Label is a user-defined display name for this configuration entry.
+	// When set, it is shown as the custom entry name in the management UI.
+	Label string `yaml:"label,omitempty" json:"label,omitempty"`
+
 	// APIKey is the authentication key for accessing Claude API services.
 	APIKey string `yaml:"api-key" json:"api-key"`
 
@@ -423,6 +427,10 @@ func (m ClaudeModel) GetAlias() string { return m.Alias }
 // CodexKey represents the configuration for a Codex API key,
 // including the API key itself and an optional base URL for the API endpoint.
 type CodexKey struct {
+	// Label is a user-defined display name for this configuration entry.
+	// When set, it is shown as the custom entry name in the management UI.
+	Label string `yaml:"label,omitempty" json:"label,omitempty"`
+
 	// APIKey is the authentication key for accessing Codex API services.
 	APIKey string `yaml:"api-key" json:"api-key"`
 
@@ -471,6 +479,10 @@ func (m CodexModel) GetAlias() string { return m.Alias }
 // GeminiKey represents the configuration for a Gemini API key,
 // including optional overrides for upstream base URL, proxy routing, and headers.
 type GeminiKey struct {
+	// Label is a user-defined display name for this configuration entry.
+	// When set, it is shown as the custom entry name in the management UI.
+	Label string `yaml:"label,omitempty" json:"label,omitempty"`
+
 	// APIKey is the authentication key for accessing Gemini API services.
 	APIKey string `yaml:"api-key" json:"api-key"`
 
@@ -870,6 +882,7 @@ func (cfg *Config) SanitizeCodexKeys() {
 	out := make([]CodexKey, 0, len(cfg.CodexKey))
 	for i := range cfg.CodexKey {
 		e := cfg.CodexKey[i]
+		e.Label = strings.TrimSpace(e.Label)
 		e.Prefix = normalizeModelPrefix(e.Prefix)
 		e.BaseURL = strings.TrimSpace(e.BaseURL)
 		e.Headers = NormalizeHeaders(e.Headers)
@@ -889,6 +902,7 @@ func (cfg *Config) SanitizeClaudeKeys() {
 	}
 	for i := range cfg.ClaudeKey {
 		entry := &cfg.ClaudeKey[i]
+		entry.Label = strings.TrimSpace(entry.Label)
 		entry.Prefix = normalizeModelPrefix(entry.Prefix)
 		entry.Headers = NormalizeHeaders(entry.Headers)
 		entry.ExcludedModels = NormalizeExcludedModels(entry.ExcludedModels)
@@ -910,6 +924,7 @@ func (cfg *Config) SanitizeGeminiKeys() {
 		if entry.APIKey == "" {
 			continue
 		}
+		entry.Label = strings.TrimSpace(entry.Label)
 		entry.Prefix = normalizeModelPrefix(entry.Prefix)
 		entry.BaseURL = strings.TrimSpace(entry.BaseURL)
 		entry.ProxyURL = strings.TrimSpace(entry.ProxyURL)

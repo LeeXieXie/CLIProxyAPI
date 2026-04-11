@@ -13,6 +13,7 @@ import (
 	gin "github.com/gin-gonic/gin"
 	proxyconfig "github.com/router-for-me/CLIProxyAPI/v6/internal/config"
 	internallogging "github.com/router-for-me/CLIProxyAPI/v6/internal/logging"
+	"github.com/router-for-me/CLIProxyAPI/v6/internal/managementasset"
 	sdkaccess "github.com/router-for-me/CLIProxyAPI/v6/sdk/access"
 	"github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
 	sdkconfig "github.com/router-for-me/CLIProxyAPI/v6/sdk/config"
@@ -132,6 +133,69 @@ func TestAmpProviderModelRoutes(t *testing.T) {
 				t.Fatalf("response body for %s missing %q: %s", tc.path, tc.wantContains, body)
 			}
 		})
+	}
+}
+
+func TestInjectManagementExtensions_AddsPluginLoaderAssets(t *testing.T) {
+	html := []byte("<html><body><main>ok</main></body></html>")
+	injected := string(injectManagementExtensions(html))
+
+	checks := []string{
+		managementasset.ExtensionAssetURL("extensions.css"),
+		managementasset.ExtensionAssetURL("bootstrap.js"),
+		"<link rel=\"stylesheet\"",
+		"<script src=\"",
+	}
+	for _, needle := range checks {
+		if !strings.Contains(injected, needle) {
+			t.Fatalf("injected html missing %q", needle)
+		}
+	}
+}
+
+func TestServeManagementExtensionAsset_ReturnsEmbeddedBootstrap(t *testing.T) {
+	server := newTestServer(t)
+	assetURL := managementasset.ExtensionAssetURL("bootstrap.js")
+	if assetURL == "" {
+		t.Fatal("expected bootstrap asset url")
+	}
+
+	req := httptest.NewRequest(http.MethodGet, assetURL, nil)
+	rr := httptest.NewRecorder()
+	server.engine.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("unexpected status code: got %d want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	if got := rr.Header().Get("Content-Type"); !strings.Contains(got, "application/javascript") {
+		t.Fatalf("content-type = %q, want javascript", got)
+	}
+	if got := rr.Header().Get("Cache-Control"); !strings.Contains(got, "immutable") {
+		t.Fatalf("cache-control = %q, want immutable", got)
+	}
+	body := rr.Body.String()
+	for _, needle := range []string{"window.__cpaBootstrapLoaded", "runtime.loadScript('usage.plugin.js')"} {
+		if !strings.Contains(body, needle) {
+			t.Fatalf("bootstrap asset missing %q", needle)
+		}
+	}
+}
+
+func TestServeManagementExtensionAsset_UnknownAssetReturnsNotFound(t *testing.T) {
+	server := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, managementasset.ExtensionAssetRoutePrefix+"/missing.js", nil)
+	rr := httptest.NewRecorder()
+	server.engine.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("unexpected status code: got %d want %d", rr.Code, http.StatusNotFound)
+	}
+}
+
+func TestInjectManagementExtensions_LeavesHTMLWithoutBodyUntouched(t *testing.T) {
+	html := []byte("<html><div>no body</div></html>")
+	injected := injectManagementExtensions(html)
+	if string(injected) != string(html) {
+		t.Fatalf("expected html without body to remain unchanged")
 	}
 }
 

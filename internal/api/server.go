@@ -325,6 +325,7 @@ func (s *Server) setupRoutes() {
 	})
 
 	s.engine.GET("/management.html", s.serveManagementControlPanel)
+	s.engine.GET(managementasset.ExtensionAssetRoutePrefix+"/*path", s.serveManagementExtensionAsset)
 	openaiHandlers := openai.NewOpenAIAPIHandler(s.handlers)
 	geminiHandlers := gemini.NewGeminiAPIHandler(s.handlers)
 	geminiCLIHandlers := gemini.NewGeminiCLIAPIHandler(s.handlers)
@@ -674,8 +675,9 @@ func (s *Server) serveManagementControlPanel(c *gin.Context) {
 		}
 	}
 
-	// Inject fork-specific extensions (request details panel + retention settings)
-	// before serving. If injection fails, fall back to serving the raw file.
+	// Inject a minimal loader seam before serving. The actual fork-specific UI
+	// behavior lives in embedded JS/CSS assets so future upstream management.html
+	// updates only need this small hook to remain compatible.
 	if data, err := os.ReadFile(filePath); err == nil {
 		injected := injectManagementExtensions(data)
 		c.Data(http.StatusOK, "text/html; charset=utf-8", injected)
@@ -685,259 +687,37 @@ func (s *Server) serveManagementControlPanel(c *gin.Context) {
 	c.File(filePath)
 }
 
-// injectManagementExtensions appends a <script> block with fork-specific UI extensions
-// immediately before </body>.  If the tag is not found the original content is returned
-// unchanged so that the page still renders.
-//
-// Only adds features not present in upstream CPAMC:
-//   - SQLite retention days setting (floating gear button, bottom-right)
+func (s *Server) serveManagementExtensionAsset(c *gin.Context) {
+	cfg := s.cfg
+	if cfg == nil || cfg.RemoteManagement.DisableControlPanel {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+
+	assetName := strings.TrimPrefix(c.Param("path"), "/")
+	asset, ok := managementasset.LookupExtensionAsset(assetName)
+	if !ok {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+
+	c.Header("Cache-Control", "public, max-age=31536000, immutable")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Data(http.StatusOK, asset.ContentType, asset.Content)
+}
+
+// injectManagementExtensions appends a minimal loader before </body> so the
+// downloaded upstream management.html stays untouched on disk while fork-
+// specific enhancements ship as embedded plugin assets.
 func injectManagementExtensions(html []byte) []byte {
-	const injection = `
-<script>
-(function() {
-  'use strict';
-
-  function mgmtHeaders() {
-    var k = '';
-    try { k = localStorage.getItem('managementKey') || sessionStorage.getItem('managementKey') || ''; } catch(e){}
-    return k ? {'Content-Type':'application/json','X-Management-Key':k} : {'Content-Type':'application/json'};
-  }
-  var base = location.protocol + '//' + location.host;
-
-  // ── styles ───────────────────────────────────────────────────────────────
-  var s = document.createElement('style');
-  s.textContent =
-    '#cpa-fab{position:fixed;bottom:24px;right:24px;width:40px;height:40px;border-radius:50%;' +
-    'background:#6c7086;color:#cdd6f4;border:none;font-size:18px;cursor:pointer;z-index:9000;' +
-    'box-shadow:0 4px 12px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;' +
-    'transition:background .2s}' +
-    '#cpa-fab:hover{background:#89b4fa}' +
-    '#cpa-ret-panel{position:fixed;bottom:74px;right:24px;background:#1e1e2e;color:#cdd6f4;' +
-    'border-radius:10px;padding:16px 18px;font-family:system-ui,sans-serif;font-size:13px;' +
-    'box-shadow:0 8px 24px rgba(0,0,0,.5);z-index:9001;min-width:240px;display:none}' +
-    '#cpa-ret-panel.open{display:block}' +
-    '#cpa-ret-panel h4{margin:0 0 12px;font-size:13px;color:#cba6f7;font-weight:600}' +
-    '#cpa-ret-panel .cpa-row{display:flex;align-items:center;gap:8px;margin-bottom:10px}' +
-    '#cpa-ret-panel input[type=number]{background:#313244;border:1px solid #45475a;color:#cdd6f4;' +
-    'border-radius:6px;padding:5px 9px;width:80px;font-size:13px}' +
-    '#cpa-ret-panel .save-btn{background:#a6e3a1;color:#1e1e2e;border:none;border-radius:6px;' +
-    'padding:5px 14px;font-size:12px;cursor:pointer;font-weight:600}' +
-    '#cpa-ret-panel .save-btn:hover{background:#94e2d5}' +
-    '#cpa-ret-msg{font-size:11px;min-height:14px;color:#a6e3a1}' +
-    /* detail modal */
-    '#cpa-detail-mask{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9990;display:none;align-items:center;justify-content:center}' +
-    '#cpa-detail-mask.open{display:flex}' +
-    '#cpa-detail-card{background:#1e1e2e;color:#cdd6f4;border-radius:12px;padding:24px 28px;' +
-    'width:min(90vw,520px);max-height:82vh;overflow-y:auto;font-family:system-ui,sans-serif;font-size:13px;' +
-    'box-shadow:0 24px 48px rgba(0,0,0,.6)}' +
-    '#cpa-detail-card h3{margin:0 0 18px;color:#cba6f7;font-size:15px;font-weight:600}' +
-    '#cpa-detail-card .drow{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #313244}' +
-    '#cpa-detail-card .drow:last-child{border:none}' +
-    '#cpa-detail-card .dlabel{color:#a6adc8;flex-shrink:0;margin-right:12px}' +
-    '#cpa-detail-card .dval{color:#cdd6f4;font-weight:500;text-align:right;word-break:break-all;max-width:65%}' +
-    '#cpa-detail-card .close-btn{margin-top:18px;width:100%;background:#313244;color:#cdd6f4;border:none;' +
-    'border-radius:6px;padding:8px;cursor:pointer;font-size:13px}' +
-    '#cpa-detail-card .close-btn:hover{background:#45475a}' +
-    'table tr.cpa-clickable:hover{cursor:pointer;outline:1px solid #89b4fa}';
-  document.head.appendChild(s);
-
-  // ── DOM ──────────────────────────────────────────────────────────────────
-  var fab = document.createElement('button');
-  fab.id = 'cpa-fab';
-  fab.title = 'SQLite 数据保留设置';
-  fab.textContent = '⚙';
-  document.body.appendChild(fab);
-
-  var panel = document.createElement('div');
-  panel.id = 'cpa-ret-panel';
-  panel.innerHTML =
-    '<h4>📦 SQLite 数据保留</h4>' +
-    '<div class="cpa-row">' +
-    '  <span style="color:#a6adc8">保留天数</span>' +
-    '  <input type="number" id="cpa-days" min="1" max="3650" value="90">' +
-    '  <button class="save-btn" id="cpa-save">保存</button>' +
-    '</div>' +
-    '<div id="cpa-ret-msg"></div>';
-  document.body.appendChild(panel);
-
-  // ── detail modal ──────────────────────────────────────────────────────────
-  var mask = document.createElement('div');
-  mask.id = 'cpa-detail-mask';
-  mask.innerHTML =
-    '<div id="cpa-detail-card">' +
-    '  <h3>📋 请求详情</h3>' +
-    '  <div id="cpa-detail-body"></div>' +
-    '  <button class="close-btn" id="cpa-detail-close">关闭</button>' +
-    '</div>';
-  document.body.appendChild(mask);
-
-  mask.addEventListener('click', function(e){ if(e.target===mask) mask.classList.remove('open'); });
-  document.getElementById('cpa-detail-close').onclick = function(){ mask.classList.remove('open'); };
-
-  // Cache of details loaded from API, keyed by "timestamp|model"
-  var detailCache = {};
-  var detailCacheLoaded = false;
-
-  function loadDetailCache(cb) {
-    if (detailCacheLoaded) { cb && cb(); return; }
-    fetch(base + '/v0/management/usage/details?limit=5000', {headers: mgmtHeaders()})
-      .then(function(r){ return r.json(); })
-      .then(function(d){
-        detailCacheLoaded = true;
-        (d.details || []).forEach(function(item) {
-          var key = (item.timestamp||'') + '|' + (item.model||'');
-          detailCache[key] = item;
-        });
-        cb && cb();
-      }).catch(function(){});
-  }
-
-  function showDetail(item) {
-    function esc(v){ return String(v==null?'-':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-    var tok = item.tokens || {};
-    var rows = [
-      ['时间',        item.timestamp ? new Date(item.timestamp).toLocaleString() : '-'],
-      ['模型',        item.model || '-'],
-      ['API / Provider', item.api || '-'],
-      ['来源 (source)', item.source || '-'],
-      ['认证索引',    item.auth_index || '-'],
-      ['延迟',        (item.latency_ms || 0) + ' ms'],
-      ['状态',        item.failed ? '❌ 失败' : '✅ 成功'],
-      ['输入 Token',  tok.input_tokens  || 0],
-      ['输出 Token',  tok.output_tokens || 0],
-      ['思考 Token',  tok.reasoning_tokens || 0],
-      ['缓存 Token',  tok.cached_tokens || 0],
-      ['总 Token',    tok.total_tokens  || 0],
-    ];
-    document.getElementById('cpa-detail-body').innerHTML = rows.map(function(r){
-      return '<div class="drow"><span class="dlabel">'+esc(r[0])+'</span><span class="dval">'+esc(r[1])+'</span></div>';
-    }).join('');
-    mask.classList.add('open');
-  }
-
-  // ── hook into upstream table rows ─────────────────────────────────────────
-  // The upstream CPAMC renders a table for request events. We observe DOM mutations
-  // and attach click listeners to table rows so users can see full detail.
-  function hookTableRows() {
-    // Target the events table on the usage page
-    var tables = document.querySelectorAll('table');
-    tables.forEach(function(tbl) {
-      if (tbl.dataset.cpaHooked) return;
-      // Only hook tables that look like request event tables (have a time-like first cell)
-      var firstRow = tbl.querySelector('tbody tr');
-      if (!firstRow) return;
-      tbl.dataset.cpaHooked = '1';
-      tbl.querySelectorAll('tbody tr').forEach(hookRow);
-      // Also observe new rows added dynamically
-      var obs = new MutationObserver(function(muts) {
-        muts.forEach(function(m){
-          m.addedNodes.forEach(function(n){
-            if (n.tagName === 'TR') hookRow(n);
-          });
-        });
-      });
-      obs.observe(tbl.querySelector('tbody') || tbl, {childList: true, subtree: true});
-    });
-  }
-
-  function hookRow(tr) {
-    if (tr.dataset.cpaHooked) return;
-    tr.dataset.cpaHooked = '1';
-    tr.classList.add('cpa-clickable');
-    tr.addEventListener('click', function(e) {
-      // Ignore clicks on buttons/links inside the row
-      if (e.target.tagName === 'BUTTON' || e.target.tagName === 'A') return;
-      // Extract timestamp and model from visible cells to look up full detail
-      var cells = tr.querySelectorAll('td');
-      if (cells.length < 2) return;
-      var tsText = cells[0] ? cells[0].textContent.trim() : '';
-      var modelText = cells[1] ? cells[1].textContent.trim() : '';
-      loadDetailCache(function() {
-        // Try to find matching record: match by model name (timestamp display format may differ)
-        var found = null;
-        Object.keys(detailCache).forEach(function(k) {
-          var item = detailCache[k];
-          if (!found && item.model && modelText && item.model.indexOf(modelText) >= 0) {
-            // Further narrow by time proximity if possible
-            if (item.timestamp) {
-              var itemTs = new Date(item.timestamp).toLocaleString();
-              if (tsText && itemTs.indexOf(tsText.slice(0,10)) >= 0) {
-                found = item;
-              }
-            }
-            if (!found) found = item; // fallback: first model match
-          }
-        });
-        if (found) {
-          showDetail(found);
-        } else {
-          // Build a partial detail from visible cell data
-          showDetail({
-            timestamp: tsText,
-            model: modelText,
-            source: cells[2] ? cells[2].textContent.trim() : '-',
-            auth_index: cells[3] ? cells[3].textContent.trim() : '-',
-            tokens: {
-              input_tokens:     cells[5] ? parseInt(cells[5].textContent)||0 : 0,
-              output_tokens:    cells[6] ? parseInt(cells[6].textContent)||0 : 0,
-              reasoning_tokens: cells[7] ? parseInt(cells[7].textContent)||0 : 0,
-              cached_tokens:    cells[8] ? parseInt(cells[8].textContent)||0 : 0,
-              total_tokens:     cells[9] ? parseInt(cells[9].textContent)||0 : 0,
-            },
-          });
-        }
-      });
-    });
-  }
-
-  // ── retention panel logic ─────────────────────────────────────────────────
-  function loadRetention() {
-    fetch(base + '/v0/management/usage/retention', {headers: mgmtHeaders()})
-      .then(function(r){ return r.json(); })
-      .then(function(d){ document.getElementById('cpa-days').value = d.retention_days || 90; })
-      .catch(function(){});
-  }
-
-  fab.onclick = function() {
-    var open = panel.classList.toggle('open');
-    if (open) loadRetention();
-  };
-
-  document.getElementById('cpa-save').onclick = function() {
-    var days = parseInt(document.getElementById('cpa-days').value, 10);
-    if (!days || days < 1 || days > 3650) { alert('请输入 1–3650 之间的天数'); return; }
-    fetch(base + '/v0/management/usage/retention', {
-      method: 'PUT', headers: mgmtHeaders(),
-      body: JSON.stringify({retention_days: days}),
-    }).then(function(r){ return r.json(); })
-      .then(function(d){
-        var msg = document.getElementById('cpa-ret-msg');
-        msg.textContent = '✅ 已保存：' + (d.retention_days || days) + ' 天';
-        setTimeout(function(){ msg.textContent = ''; }, 3000);
-      }).catch(function(e){ alert('保存失败：' + e.message); });
-  };
-
-  document.addEventListener('click', function(e) {
-    if (!panel.contains(e.target) && e.target !== fab) panel.classList.remove('open');
-  });
-
-  // ── observe DOM for table appearance (SPA routing) ────────────────────────
-  var pageObs = new MutationObserver(function() {
-    if (location.hash.includes('usage')) hookTableRows();
-  });
-  pageObs.observe(document.body, {childList: true, subtree: true});
-  window.addEventListener('hashchange', function(){
-    detailCacheLoaded = false; // invalidate cache on navigation
-    detailCache = {};
-    if (location.hash.includes('usage')) setTimeout(hookTableRows, 600);
-  });
-  setTimeout(function(){
-    if (location.hash.includes('usage')) hookTableRows();
-  }, 1000);
-})();
-</script>
-`
 	const closeBody = "</body>"
+	injection := fmt.Sprintf(`
+<link rel="stylesheet" href="%s">
+<script src="%s"></script>
+`,
+		managementasset.ExtensionAssetURL("extensions.css"),
+		managementasset.ExtensionAssetURL("bootstrap.js"),
+	)
 	idx := bytes.LastIndex(html, []byte(closeBody))
 	if idx < 0 {
 		return html
