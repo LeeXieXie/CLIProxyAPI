@@ -1,5 +1,11 @@
 version: 2
 
+release:
+  github:
+    owner: LeeXieXie
+    name: CLIProxyAPI
+  skip_upload: true
+
 builds:
   - id: "cli-proxy-api"
     env:
