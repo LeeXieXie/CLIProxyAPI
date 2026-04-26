@@ -12,27 +12,50 @@ env:
 jobs:
   docker_amd64:
     runs-on: ubuntu-latest
-    if: ${{ secrets.DOCKERHUB_USERNAME != '' }}
     steps:
+      - name: Check DockerHub credentials
+        id: dockerhub
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -n "${DOCKERHUB_USERNAME}" ] && [ -n "${DOCKERHUB_TOKEN}" ]; then
+            echo "enabled=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "enabled=false" >> "${GITHUB_OUTPUT}"
+            echo "DockerHub credentials missing; skipping amd64 image build."
+          fi
+
       - name: Checkout
+        if: steps.dockerhub.outputs.enabled == 'true'
         uses: actions/checkout@v4
+
       - name: Refresh models catalog
+        if: steps.dockerhub.outputs.enabled == 'true'
         run: |
           git fetch --depth 1 https://github.com/router-for-me/models.git main
           git show FETCH_HEAD:models.json > internal/registry/models/models.json
+
       - name: Set up Docker Buildx
+        if: steps.dockerhub.outputs.enabled == 'true'
         uses: docker/setup-buildx-action@v3
+
       - name: Login to DockerHub
+        if: steps.dockerhub.outputs.enabled == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Generate Build Metadata
+        if: steps.dockerhub.outputs.enabled == 'true'
         run: |
           echo "VERSION=${GITHUB_REF_NAME}" >> $GITHUB_ENV
           echo COMMIT=`git rev-parse --short HEAD` >> $GITHUB_ENV
           echo BUILD_DATE=`date -u +%Y-%m-%dT%H:%M:%SZ` >> $GITHUB_ENV
+
       - name: Build and push (amd64)
+        if: steps.dockerhub.outputs.enabled == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -48,27 +71,50 @@ jobs:
 
   docker_arm64:
     runs-on: ubuntu-24.04-arm
-    if: ${{ secrets.DOCKERHUB_USERNAME != '' }}
     steps:
+      - name: Check DockerHub credentials
+        id: dockerhub
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -n "${DOCKERHUB_USERNAME}" ] && [ -n "${DOCKERHUB_TOKEN}" ]; then
+            echo "enabled=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "enabled=false" >> "${GITHUB_OUTPUT}"
+            echo "DockerHub credentials missing; skipping arm64 image build."
+          fi
+
       - name: Checkout
+        if: steps.dockerhub.outputs.enabled == 'true'
         uses: actions/checkout@v4
+
       - name: Refresh models catalog
+        if: steps.dockerhub.outputs.enabled == 'true'
         run: |
           git fetch --depth 1 https://github.com/router-for-me/models.git main
           git show FETCH_HEAD:models.json > internal/registry/models/models.json
+
       - name: Set up Docker Buildx
+        if: steps.dockerhub.outputs.enabled == 'true'
         uses: docker/setup-buildx-action@v3
+
       - name: Login to DockerHub
+        if: steps.dockerhub.outputs.enabled == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Generate Build Metadata
+        if: steps.dockerhub.outputs.enabled == 'true'
         run: |
           echo "VERSION=${GITHUB_REF_NAME}" >> $GITHUB_ENV
           echo COMMIT=`git rev-parse --short HEAD` >> $GITHUB_ENV
           echo BUILD_DATE=`date -u +%Y-%m-%dT%H:%M:%SZ` >> $GITHUB_ENV
+
       - name: Build and push (arm64)
+        if: steps.dockerhub.outputs.enabled == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -84,26 +130,47 @@ jobs:
 
   docker_manifest:
     runs-on: ubuntu-latest
-    if: ${{ secrets.DOCKERHUB_USERNAME != '' }}
     needs:
       - docker_amd64
       - docker_arm64
     steps:
+      - name: Check DockerHub credentials
+        id: dockerhub
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -n "${DOCKERHUB_USERNAME}" ] && [ -n "${DOCKERHUB_TOKEN}" ]; then
+            echo "enabled=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "enabled=false" >> "${GITHUB_OUTPUT}"
+            echo "DockerHub credentials missing; skipping multi-arch manifest."
+          fi
+
       - name: Checkout
+        if: steps.dockerhub.outputs.enabled == 'true'
         uses: actions/checkout@v4
+
       - name: Set up Docker Buildx
+        if: steps.dockerhub.outputs.enabled == 'true'
         uses: docker/setup-buildx-action@v3
+
       - name: Login to DockerHub
+        if: steps.dockerhub.outputs.enabled == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Generate Build Metadata
+        if: steps.dockerhub.outputs.enabled == 'true'
         run: |
           echo "VERSION=${GITHUB_REF_NAME}" >> $GITHUB_ENV
           echo COMMIT=`git rev-parse --short HEAD` >> $GITHUB_ENV
           echo BUILD_DATE=`date -u +%Y-%m-%dT%H:%M:%SZ` >> $GITHUB_ENV
+
       - name: Create and push multi-arch manifests
+        if: steps.dockerhub.outputs.enabled == 'true'
         run: |
           docker buildx imagetools create \
             --tag "${DOCKERHUB_REPO}:latest" \
@@ -113,7 +180,9 @@ jobs:
             --tag "${DOCKERHUB_REPO}:${VERSION}" \
             "${DOCKERHUB_REPO}:${VERSION}-amd64" \
             "${DOCKERHUB_REPO}:${VERSION}-arm64"
+
       - name: Cleanup temporary tags
+        if: steps.dockerhub.outputs.enabled == 'true'
         continue-on-error: true
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
