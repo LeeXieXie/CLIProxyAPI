@@ -59,8 +59,8 @@ jobs:
         run: |
           set -euo pipefail
           git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
-          git fetch upstream main --tags
-          git fetch origin main "${FEATURE_BRANCH}" --tags
+          git fetch upstream main
+          git fetch origin main "${FEATURE_BRANCH}"
 
       - name: Detect upstream changes
         id: detect
@@ -107,7 +107,12 @@ jobs:
         run: |
           set -euo pipefail
           suffix="${{ inputs.tag_suffix || env.TAG_SUFFIX }}"
-          base_tag="$(git tag --merged upstream/main --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)"
+          base_tag="$(git ls-remote --tags --refs "https://github.com/${UPSTREAM_REPO}.git" 'v*' \
+            | awk '{print $2}' \
+            | sed 's#refs/tags/##' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V \
+            | tail -1)"
           if [ -z "${base_tag}" ]; then
             echo "No upstream semver tag found" >&2
             exit 1
