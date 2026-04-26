@@ -3,6 +3,14 @@ name: sync-upstream-feature-release
 on:
   workflow_dispatch:
     inputs:
+      dry_run:
+        description: "Validate sync without pushing branches, tags, or releases"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
       release:
         description: "Trigger goreleaser after syncing"
         required: false
@@ -58,24 +66,28 @@ jobs:
         id: detect
         run: |
           set -euo pipefail
-          upstream_sha="$(git rev-parse upstream/main)"
-          origin_main_sha="$(git rev-parse origin/main)"
+          dry_run="${{ inputs.dry_run || 'false' }}"
 
-          if [ "${upstream_sha}" = "${origin_main_sha}" ] && [ "${GITHUB_EVENT_NAME}" = "schedule" ]; then
+          if git merge-base --is-ancestor upstream/main origin/main && [ "${dry_run}" != "true" ] && [ "${GITHUB_EVENT_NAME}" = "schedule" ]; then
             echo "should_run=false" >> "${GITHUB_OUTPUT}"
-            echo "reason=origin/main already matches upstream/main" >> "${GITHUB_OUTPUT}"
+            echo "reason=origin/main already contains upstream/main" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
 
           echo "should_run=true" >> "${GITHUB_OUTPUT}"
-          echo "reason=upstream/main changed or manual run" >> "${GITHUB_OUTPUT}"
+          echo "reason=upstream/main changed, manual run, or dry-run validation" >> "${GITHUB_OUTPUT}"
 
-      - name: Sync fork main with upstream main
+      - name: Merge upstream main into fork main
         if: ${{ steps.detect.outputs.should_run == 'true' }}
         run: |
           set -euo pipefail
-          git checkout -B main upstream/main
-          git push origin main
+          git checkout -B main origin/main
+          git merge --no-edit upstream/main
+          if [ "${{ inputs.dry_run || 'false' }}" = "true" ]; then
+            echo "Dry-run: not pushing main."
+          else
+            git push origin main
+          fi
 
       - name: Merge upstream main into feature branch
         if: ${{ steps.detect.outputs.should_run == 'true' }}
@@ -83,10 +95,14 @@ jobs:
           set -euo pipefail
           git checkout -B "${FEATURE_BRANCH}" "origin/${FEATURE_BRANCH}"
           git merge --no-edit upstream/main
-          git push origin "${FEATURE_BRANCH}"
+          if [ "${{ inputs.dry_run || 'false' }}" = "true" ]; then
+            echo "Dry-run: not pushing ${FEATURE_BRANCH}."
+          else
+            git push origin "${FEATURE_BRANCH}"
+          fi
 
       - name: Create unique release tag
-        if: ${{ steps.detect.outputs.should_run == 'true' }}
+        if: ${{ steps.detect.outputs.should_run == 'true' && (inputs.dry_run || 'false') != 'true' }}
         id: tag
         run: |
           set -euo pipefail
@@ -107,7 +123,7 @@ jobs:
           echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
 
       - name: Trigger goreleaser workflow
-        if: ${{ steps.detect.outputs.should_run == 'true' && (github.event_name == 'schedule' || inputs.release == 'true') }}
+        if: ${{ steps.detect.outputs.should_run == 'true' && (inputs.dry_run || 'false') != 'true' && (github.event_name == 'schedule' || inputs.release == 'true') }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -124,8 +140,9 @@ jobs:
 
           - Upstream: ${UPSTREAM_REPO}
           - Feature branch: ${FEATURE_BRANCH}
+          - Dry-run: ${{ inputs.dry_run || 'false' }}
           - Should run: ${{ steps.detect.outputs.should_run }}
           - Reason: ${{ steps.detect.outputs.reason }}
           - Release tag: ${{ steps.tag.outputs.tag }}
-          - Release triggered: ${{ steps.detect.outputs.should_run == 'true' && (github.event_name == 'schedule' || inputs.release == 'true') }}
+          - Release triggered: ${{ steps.detect.outputs.should_run == 'true' && (inputs.dry_run || 'false') != 'true' && (github.event_name == 'schedule' || inputs.release == 'true') }}
           EOF
