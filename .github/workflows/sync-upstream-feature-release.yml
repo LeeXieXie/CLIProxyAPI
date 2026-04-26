@@ -1,0 +1,131 @@
+name: sync-upstream-feature-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Trigger goreleaser after syncing"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      tag_suffix:
+        description: "Suffix appended to upstream tag"
+        required: false
+        default: "persist"
+  schedule:
+    - cron: "17 */6 * * *"
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: sync-upstream-feature-release
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPO: router-for-me/CLIProxyAPI
+  FEATURE_BRANCH: feat/usage-persistence-plugin
+  TAG_SUFFIX: persist
+
+jobs:
+  sync-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch upstream and fork branches
+        run: |
+          set -euo pipefail
+          git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
+          git fetch upstream main --tags
+          git fetch origin main "${FEATURE_BRANCH}" --tags
+
+      - name: Detect upstream changes
+        id: detect
+        run: |
+          set -euo pipefail
+          upstream_sha="$(git rev-parse upstream/main)"
+          origin_main_sha="$(git rev-parse origin/main)"
+
+          if [ "${upstream_sha}" = "${origin_main_sha}" ] && [ "${GITHUB_EVENT_NAME}" = "schedule" ]; then
+            echo "should_run=false" >> "${GITHUB_OUTPUT}"
+            echo "reason=origin/main already matches upstream/main" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          echo "should_run=true" >> "${GITHUB_OUTPUT}"
+          echo "reason=upstream/main changed or manual run" >> "${GITHUB_OUTPUT}"
+
+      - name: Sync fork main with upstream main
+        if: ${{ steps.detect.outputs.should_run == 'true' }}
+        run: |
+          set -euo pipefail
+          git checkout -B main upstream/main
+          git push origin main
+
+      - name: Merge upstream main into feature branch
+        if: ${{ steps.detect.outputs.should_run == 'true' }}
+        run: |
+          set -euo pipefail
+          git checkout -B "${FEATURE_BRANCH}" "origin/${FEATURE_BRANCH}"
+          git merge --no-edit upstream/main
+          git push origin "${FEATURE_BRANCH}"
+
+      - name: Create unique release tag
+        if: ${{ steps.detect.outputs.should_run == 'true' }}
+        id: tag
+        run: |
+          set -euo pipefail
+          suffix="${{ inputs.tag_suffix || env.TAG_SUFFIX }}"
+          base_tag="$(git tag --merged upstream/main --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)"
+          if [ -z "${base_tag}" ]; then
+            echo "No upstream semver tag found" >&2
+            exit 1
+          fi
+
+          sha="$(git rev-parse --short HEAD)"
+          ts="$(date -u +%Y%m%d-%H%M%S)"
+          tag="${base_tag}-${suffix}.${ts}.${sha}"
+
+          git tag "${tag}"
+          git push origin "refs/tags/${tag}"
+
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+
+      - name: Trigger goreleaser workflow
+        if: ${{ steps.detect.outputs.should_run == 'true' && (github.event_name == 'schedule' || inputs.release == 'true') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh workflow run release.yaml \
+            --repo "${GITHUB_REPOSITORY}" \
+            --ref main \
+            -f release_tag="${{ steps.tag.outputs.tag }}"
+
+      - name: Summary
+        run: |
+          cat >> "${GITHUB_STEP_SUMMARY}" <<EOF
+          ## Sync upstream feature release
+
+          - Upstream: ${UPSTREAM_REPO}
+          - Feature branch: ${FEATURE_BRANCH}
+          - Should run: ${{ steps.detect.outputs.should_run }}
+          - Reason: ${{ steps.detect.outputs.reason }}
+          - Release tag: ${{ steps.tag.outputs.tag }}
+          - Release triggered: ${{ steps.detect.outputs.should_run == 'true' && (github.event_name == 'schedule' || inputs.release == 'true') }}
+          EOF
