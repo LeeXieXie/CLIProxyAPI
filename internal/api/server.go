@@ -706,9 +706,17 @@ func (s *Server) serveManagementControlPanel(c *gin.Context) {
 		}
 	}
 
-	// Inject the legacy extension layer only for non-default panels. The default
-	// CPA-Manager panel already ships these workflows in its single-file UI.
 	if data, err := os.ReadFile(filePath); err == nil {
+		if shouldRefreshDefaultManagementPanel(data, cfg.RemoteManagement.PanelGitHubRepository) {
+			if managementasset.EnsureLatestManagementHTML(context.Background(), managementasset.StaticDir(s.configFilePath), cfg.ProxyURL, cfg.RemoteManagement.PanelGitHubRepository) {
+				if refreshed, errReadRefreshed := os.ReadFile(filePath); errReadRefreshed == nil {
+					data = refreshed
+				}
+			}
+		}
+
+		// Inject the legacy extension layer only for non-default panels. The default
+		// CPA-Manager panel already ships these workflows in its single-file UI.
 		injected := injectManagementExtensions(data, cfg.RemoteManagement.PanelGitHubRepository)
 		c.Data(http.StatusOK, "text/html; charset=utf-8", injected)
 		return
@@ -777,6 +785,13 @@ func isDefaultManagementPanelRepository(panelRepository string) bool {
 		return true
 	}
 	return strings.EqualFold(trimmed, "https://api.github.com/repos/seakee/CPA-Manager/releases/latest")
+}
+
+func shouldRefreshDefaultManagementPanel(html []byte, panelRepository string) bool {
+	if !isDefaultManagementPanelRepository(panelRepository) {
+		return false
+	}
+	return !bytes.Contains(html, []byte("/monitoring")) || !bytes.Contains(html, []byte("usage_service"))
 }
 
 func (s *Server) enableKeepAlive(timeout time.Duration, onTimeout func()) {

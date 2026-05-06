@@ -261,6 +261,27 @@ func TestInjectManagementExtensions_SkipsDefaultCPAManagerPanel(t *testing.T) {
 	}
 }
 
+func TestShouldRefreshDefaultManagementPanel_RefreshesLegacyCPAMCCache(t *testing.T) {
+	legacyHTML := []byte("<html><body><nav>日志查看</nav><main>legacy CPAMC</main></body></html>")
+	if !shouldRefreshDefaultManagementPanel(legacyHTML, proxyconfig.DefaultPanelGitHubRepository) {
+		t.Fatal("expected legacy cached CPAMC panel to refresh when the default panel is CPA-Manager")
+	}
+}
+
+func TestShouldRefreshDefaultManagementPanel_KeepsCPAManagerCache(t *testing.T) {
+	cpaManagerHTML := []byte("<html><body><script>location.href='/monitoring'; window.__usage_service='/usage-service/info';</script></body></html>")
+	if shouldRefreshDefaultManagementPanel(cpaManagerHTML, proxyconfig.DefaultPanelGitHubRepository) {
+		t.Fatal("expected CPA-Manager cached panel to be served without forced refresh")
+	}
+}
+
+func TestShouldRefreshDefaultManagementPanel_IgnoresCustomPanel(t *testing.T) {
+	legacyHTML := []byte("<html><body><nav>日志查看</nav><main>custom panel</main></body></html>")
+	if shouldRefreshDefaultManagementPanel(legacyHTML, "https://github.com/router-for-me/Cli-Proxy-API-Management-Center") {
+		t.Fatal("expected custom panel repositories to keep their existing cache semantics")
+	}
+}
+
 func TestServeManagementExtensionAsset_ReturnsEmbeddedBootstrap(t *testing.T) {
 	server := newTestServer(t)
 	assetURL := managementasset.ExtensionAssetURL("bootstrap.js")
