@@ -1357,17 +1357,28 @@ attemptLoop:
 
 					chunks := sdktranslator.TranslateStream(ctx, to, from, req.Model, opts.OriginalRequest, translated, bytes.Clone(payload), &param)
 					for i := range chunks {
-						out <- cliproxyexecutor.StreamChunk{Payload: chunks[i]}
+						select {
+						case out <- cliproxyexecutor.StreamChunk{Payload: chunks[i]}:
+						case <-ctx.Done():
+							return
+						}
 					}
 				}
 				tail := sdktranslator.TranslateStream(ctx, to, from, req.Model, opts.OriginalRequest, translated, []byte("[DONE]"), &param)
 				for i := range tail {
-					out <- cliproxyexecutor.StreamChunk{Payload: tail[i]}
+					select {
+					case out <- cliproxyexecutor.StreamChunk{Payload: tail[i]}:
+					case <-ctx.Done():
+						return
+					}
 				}
 				if errScan := scanner.Err(); errScan != nil {
 					helps.RecordAPIResponseError(ctx, e.cfg, errScan)
 					reporter.PublishFailure(ctx)
-					out <- cliproxyexecutor.StreamChunk{Err: errScan}
+					select {
+					case out <- cliproxyexecutor.StreamChunk{Err: errScan}:
+					case <-ctx.Done():
+					}
 				} else {
 					reporter.EnsurePublished(ctx)
 				}
@@ -1778,7 +1789,7 @@ func (e *AntigravityExecutor) updateAntigravityCreditsBalance(ctx context.Contex
 		log.Debugf("antigravity executor: marshal loadCodeAssist request error: %v", errMarshal)
 		return
 	}
-	baseURL := buildBaseURL(auth)
+	baseURL := buildLoadCodeAssistBaseURL(auth)
 	endpointURL := strings.TrimSuffix(baseURL, "/") + "/v1internal:loadCodeAssist"
 	httpReq, errReq := http.NewRequestWithContext(ctx, http.MethodPost, endpointURL, bytes.NewReader(loadReqBody))
 	if errReq != nil {
@@ -2072,6 +2083,13 @@ func buildBaseURL(auth *cliproxyauth.Auth) string {
 		return baseURLs[0]
 	}
 	return antigravityBaseURLDaily
+}
+
+func buildLoadCodeAssistBaseURL(auth *cliproxyauth.Auth) string {
+	if base := resolveCustomAntigravityBaseURL(auth); base != "" {
+		return base
+	}
+	return antigravityBaseURLProd
 }
 
 func resolveHost(base string) string {
