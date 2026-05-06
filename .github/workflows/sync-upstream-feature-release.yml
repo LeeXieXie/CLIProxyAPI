@@ -64,18 +64,57 @@ jobs:
 
       - name: Detect upstream changes
         id: detect
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           dry_run="${{ inputs.dry_run || 'false' }}"
+          suffix="${{ inputs.tag_suffix || env.TAG_SUFFIX }}"
 
-          if git merge-base --is-ancestor upstream/main origin/main && [ "${dry_run}" != "true" ] && [ "${GITHUB_EVENT_NAME}" = "schedule" ]; then
+          latest_upstream_tag="$(git ls-remote --tags --refs "https://github.com/${UPSTREAM_REPO}.git" 'v*' \
+            | awk '{print $2}' \
+            | sed 's#refs/tags/##' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V \
+            | tail -1)"
+          if [ -z "${latest_upstream_tag}" ]; then
+            echo "No upstream semver tag found" >&2
+            exit 1
+          fi
+
+          main_current=false
+          if git merge-base --is-ancestor upstream/main origin/main; then
+            main_current=true
+          fi
+
+          feature_current=false
+          if git merge-base --is-ancestor upstream/main "origin/${FEATURE_BRANCH}"; then
+            feature_current=true
+          fi
+
+          release_prefix="${latest_upstream_tag}-${suffix}"
+          matching_release="$(gh release list --repo "${GITHUB_REPOSITORY}" --limit 200 --json tagName \
+            --jq ".[] | select(.tagName == \"${release_prefix}\" or (.tagName | startswith(\"${release_prefix}.\"))) | .tagName" \
+            | head -n 1 || true)"
+          release_current=false
+          if [ -n "${matching_release}" ]; then
+            release_current=true
+          fi
+
+          echo "latest_upstream_tag=${latest_upstream_tag}" >> "${GITHUB_OUTPUT}"
+          echo "matching_release=${matching_release}" >> "${GITHUB_OUTPUT}"
+          echo "main_current=${main_current}" >> "${GITHUB_OUTPUT}"
+          echo "feature_current=${feature_current}" >> "${GITHUB_OUTPUT}"
+          echo "release_current=${release_current}" >> "${GITHUB_OUTPUT}"
+
+          if [ "${main_current}" = "true" ] && [ "${feature_current}" = "true" ] && [ "${release_current}" = "true" ] && [ "${dry_run}" != "true" ] && [ "${GITHUB_EVENT_NAME}" = "schedule" ]; then
             echo "should_run=false" >> "${GITHUB_OUTPUT}"
-            echo "reason=origin/main already contains upstream/main" >> "${GITHUB_OUTPUT}"
+            echo "reason=main and ${FEATURE_BRANCH} already contain upstream/main, and ${matching_release} exists for ${latest_upstream_tag}" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
 
           echo "should_run=true" >> "${GITHUB_OUTPUT}"
-          echo "reason=upstream/main changed, manual run, or dry-run validation" >> "${GITHUB_OUTPUT}"
+          echo "reason=upstream/main changed, ${FEATURE_BRANCH} needs sync, ${latest_upstream_tag} needs release, manual run, or dry-run validation" >> "${GITHUB_OUTPUT}"
 
       - name: Merge upstream main into fork main
         if: ${{ steps.detect.outputs.should_run == 'true' }}
@@ -148,6 +187,11 @@ jobs:
           - Dry-run: ${{ inputs.dry_run || 'false' }}
           - Should run: ${{ steps.detect.outputs.should_run }}
           - Reason: ${{ steps.detect.outputs.reason }}
+          - Latest upstream tag: ${{ steps.detect.outputs.latest_upstream_tag }}
+          - Existing matching release: ${{ steps.detect.outputs.matching_release }}
+          - Main current: ${{ steps.detect.outputs.main_current }}
+          - Feature current: ${{ steps.detect.outputs.feature_current }}
+          - Release current: ${{ steps.detect.outputs.release_current }}
           - Release tag: ${{ steps.tag.outputs.tag }}
           - Release triggered: ${{ steps.detect.outputs.should_run == 'true' && (inputs.dry_run || 'false') != 'true' && (github.event_name == 'schedule' || inputs.release == 'true') }}
           EOF
