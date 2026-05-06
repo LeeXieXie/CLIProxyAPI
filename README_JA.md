@@ -66,7 +66,11 @@ CLIProxyAPIガイド：[https://help.router-for.me/](https://help.router-for.me/
 
 ## 使用量統計
 
-v6.10.0以降、CLIProxyAPIおよび [CPAMC](https://github.com/router-for-me/Cli-Proxy-API-Management-Center) プロジェクトには使用量統計機能がプリセットされなくなりました。使用量統計が必要な場合は、次のプロジェクトをご利用ください：
+組み込みの `/management.html` パネルは、デフォルトで [CPA-Manager](https://github.com/seakee/CPA-Manager) から読み込まれるようになりました。CLIProxyAPI は引き続き Management API とパネル入口を提供します。SQLite backed の使用量分析が必要な場合のみ、CPA-Manager の Usage Service を別途デプロイしてください。
+
+別のパネルを使う場合は、`config.yaml` の `remote-management.panel-github-repository` を上書きしてください。
+
+v6.10.0以降、旧 [CPAMC](https://github.com/router-for-me/Cli-Proxy-API-Management-Center) パネルには使用量統計機能がプリセットされなくなりました。使用量統計が必要な場合は、次のプロジェクトをご利用ください：
 
 ### [CPA Usage Keeper](https://github.com/Willxup/cpa-usage-keeper)
 

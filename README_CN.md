@@ -93,7 +93,11 @@ CLIProxyAPI 用户手册： [https://help.router-for.me/](https://help.router-fo
 
 ## 使用量统计
 
-自v6.10.0版本以后，CLIProxyAPI及 [CPAMC](https://github.com/router-for-me/Cli-Proxy-API-Management-Center) 项目不再预置数据统计功能，如果有数据统计需求的请使用以下项目：
+内置 `/management.html` 面板现在默认从 [CPA-Manager](https://github.com/seakee/CPA-Manager) 加载。CLIProxyAPI 仍负责提供 Management API 和面板入口；只有需要 SQLite 持久化使用量分析时，才需要单独部署 CPA-Manager 的 Usage Service。
+
+如果你想使用其他面板，可在 `config.yaml` 中覆盖 `remote-management.panel-github-repository`。
+
+自v6.10.0版本以后，旧版 [CPAMC](https://github.com/router-for-me/Cli-Proxy-API-Management-Center) 面板不再预置数据统计功能，如果有数据统计需求的请使用以下项目：
 
 ### [CPA Usage Keeper](https://github.com/Willxup/cpa-usage-keeper)
 

@@ -20,8 +20,10 @@ import (
 )
 
 const (
-	DefaultPanelGitHubRepository = "https://github.com/router-for-me/Cli-Proxy-API-Management-Center"
-	DefaultPprofAddr             = "127.0.0.1:8316"
+	DefaultPanelGitHubRepository       = "https://github.com/seakee/CPA-Manager"
+	legacyDefaultPanelGitHubRepository = "https://github.com/router-for-me/Cli-Proxy-API-Management-Center"
+	legacyDefaultPanelReleaseAPI       = "https://api.github.com/repos/router-for-me/Cli-Proxy-API-Management-Center/releases/latest"
+	DefaultPprofAddr                   = "127.0.0.1:8316"
 )
 
 // Config represents the application's configuration, loaded from a YAML file.
@@ -675,7 +677,7 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 		_ = SaveConfigPreserveCommentsUpdateNestedScalar(configFile, []string{"remote-management", "secret-key"}, hashed)
 	}
 
-	cfg.RemoteManagement.PanelGitHubRepository = strings.TrimSpace(cfg.RemoteManagement.PanelGitHubRepository)
+	cfg.RemoteManagement.PanelGitHubRepository = normalizePanelGitHubRepository(cfg.RemoteManagement.PanelGitHubRepository)
 	if cfg.RemoteManagement.PanelGitHubRepository == "" {
 		cfg.RemoteManagement.PanelGitHubRepository = DefaultPanelGitHubRepository
 	}
@@ -1056,9 +1058,28 @@ func hashSecret(secret string) (string, error) {
 	return string(hashedBytes), nil
 }
 
+func normalizePanelGitHubRepository(repo string) string {
+	trimmed := strings.TrimSpace(repo)
+	if trimmed == "" {
+		return ""
+	}
+	trimmed = strings.TrimSuffix(trimmed, "/")
+	trimmed = strings.TrimSuffix(trimmed, ".git")
+	if strings.EqualFold(trimmed, legacyDefaultPanelGitHubRepository) || strings.EqualFold(trimmed, legacyDefaultPanelReleaseAPI) {
+		return DefaultPanelGitHubRepository
+	}
+	return trimmed
+}
+
 // SaveConfigPreserveComments writes the config back to YAML while preserving existing comments
 // and key ordering by loading the original file into a yaml.Node tree and updating values in-place.
 func SaveConfigPreserveComments(configFile string, cfg *Config) error {
+	if cfg != nil {
+		cfg.RemoteManagement.PanelGitHubRepository = normalizePanelGitHubRepository(cfg.RemoteManagement.PanelGitHubRepository)
+		if cfg.RemoteManagement.PanelGitHubRepository == "" {
+			cfg.RemoteManagement.PanelGitHubRepository = DefaultPanelGitHubRepository
+		}
+	}
 	persistCfg := cfg
 	// Load original YAML as a node tree to preserve comments and ordering.
 	data, err := os.ReadFile(configFile)

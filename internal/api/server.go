@@ -706,11 +706,10 @@ func (s *Server) serveManagementControlPanel(c *gin.Context) {
 		}
 	}
 
-	// Inject a minimal loader seam before serving. The actual fork-specific UI
-	// behavior lives in embedded JS/CSS assets so future upstream management.html
-	// updates only need this small hook to remain compatible.
+	// Inject the legacy extension layer only for non-default panels. The default
+	// CPA-Manager panel already ships these workflows in its single-file UI.
 	if data, err := os.ReadFile(filePath); err == nil {
-		injected := injectManagementExtensions(data)
+		injected := injectManagementExtensions(data, cfg.RemoteManagement.PanelGitHubRepository)
 		c.Data(http.StatusOK, "text/html; charset=utf-8", injected)
 		return
 	}
@@ -737,10 +736,13 @@ func (s *Server) serveManagementExtensionAsset(c *gin.Context) {
 	c.Data(http.StatusOK, asset.ContentType, asset.Content)
 }
 
-// injectManagementExtensions appends a minimal loader before </body> so the
-// downloaded upstream management.html stays untouched on disk while fork-
-// specific enhancements ship as embedded plugin assets.
-func injectManagementExtensions(html []byte) []byte {
+// injectManagementExtensions appends a minimal loader before </body> for legacy
+// panels that still need the embedded compatibility plugins.
+func injectManagementExtensions(html []byte, panelRepository string) []byte {
+	if isDefaultManagementPanelRepository(panelRepository) {
+		return html
+	}
+
 	const closeBody = "</body>"
 	injection := fmt.Sprintf(`
 <link rel="stylesheet" href="%s">
@@ -758,6 +760,23 @@ func injectManagementExtensions(html []byte) []byte {
 	buf = append(buf, []byte(injection)...)
 	buf = append(buf, html[idx:]...)
 	return buf
+}
+
+func isDefaultManagementPanelRepository(panelRepository string) bool {
+	trimmed := strings.TrimSpace(panelRepository)
+	if trimmed == "" {
+		return true
+	}
+	trimmed = strings.TrimSuffix(trimmed, "/")
+	trimmed = strings.TrimSuffix(trimmed, ".git")
+	defaultRepo := strings.TrimSuffix(config.DefaultPanelGitHubRepository, "/")
+	if strings.EqualFold(trimmed, defaultRepo) {
+		return true
+	}
+	if strings.EqualFold(trimmed, "https://api.github.com/repos/seakee/CPA-Manager") {
+		return true
+	}
+	return strings.EqualFold(trimmed, "https://api.github.com/repos/seakee/CPA-Manager/releases/latest")
 }
 
 func (s *Server) enableKeepAlive(timeout time.Duration, onTimeout func()) {

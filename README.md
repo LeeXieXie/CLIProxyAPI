@@ -93,7 +93,11 @@ see [MANAGEMENT_API.md](https://help.router-for.me/management/api)
 
 ## Usage Statistics
 
-Since v6.10.0, CLIProxyAPI and [CPAMC](https://github.com/router-for-me/Cli-Proxy-API-Management-Center) no longer ship built-in usage statistics. If you need usage statistics, use:
+The bundled `/management.html` panel is now loaded from [CPA-Manager](https://github.com/seakee/CPA-Manager), a single-file React panel with optional Usage Service integration. CLIProxyAPI still serves the Management API and the panel; deploy CPA-Manager's Usage Service separately only when you need SQLite-backed usage analytics.
+
+If you prefer another panel, override `remote-management.panel-github-repository` in `config.yaml`.
+
+Since v6.10.0, the legacy [CPAMC](https://github.com/router-for-me/Cli-Proxy-API-Management-Center) panel no longer ships built-in usage statistics. If you need usage statistics, use:
 
 ### [CPA Usage Keeper](https://github.com/Willxup/cpa-usage-keeper)
 

@@ -7,6 +7,50 @@ import (
 	"testing"
 )
 
+func TestLoadConfig_DefaultPanelRepositoryUsesCPAManager(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(configPath, []byte("remote-management:\n  secret-key: \"\"\n"), 0o644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	loaded, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	if got := loaded.RemoteManagement.PanelGitHubRepository; got != "https://github.com/seakee/CPA-Manager" {
+		t.Fatalf("default panel repository = %q", got)
+	}
+}
+
+func TestLoadConfig_LegacyDefaultPanelRepositoryMigratesToCPAManager(t *testing.T) {
+	legacyValues := []string{
+		"https://github.com/router-for-me/Cli-Proxy-API-Management-Center",
+		"https://github.com/router-for-me/Cli-Proxy-API-Management-Center/",
+		"https://github.com/router-for-me/Cli-Proxy-API-Management-Center.git",
+		"https://api.github.com/repos/router-for-me/Cli-Proxy-API-Management-Center/releases/latest",
+	}
+	for _, value := range legacyValues {
+		value := value
+		t.Run(value, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "config.yaml")
+			data := []byte("remote-management:\n  panel-github-repository: \"" + value + "\"\n")
+			if err := os.WriteFile(configPath, data, 0o644); err != nil {
+				t.Fatalf("failed to write config: %v", err)
+			}
+
+			loaded, err := LoadConfig(configPath)
+			if err != nil {
+				t.Fatalf("LoadConfig() error = %v", err)
+			}
+
+			if got := loaded.RemoteManagement.PanelGitHubRepository; got != "https://github.com/seakee/CPA-Manager" {
+				t.Fatalf("migrated panel repository = %q", got)
+			}
+		})
+	}
+}
+
 func TestSanitizeGeminiKeys_TrimsLabel(t *testing.T) {
 	cfg := &Config{
 		GeminiKey: []GeminiKey{{Label: "  Primary Gemini  ", APIKey: "gemini-key", BaseURL: "https://gemini.example.com"}},

@@ -225,7 +225,7 @@ func TestAmpProviderModelRoutes(t *testing.T) {
 
 func TestInjectManagementExtensions_AddsPluginLoaderAssets(t *testing.T) {
 	html := []byte("<html><body><main>ok</main></body></html>")
-	injected := string(injectManagementExtensions(html))
+	injected := string(injectManagementExtensions(html, "https://github.com/router-for-me/Cli-Proxy-API-Management-Center"))
 
 	checks := []string{
 		managementasset.ExtensionAssetURL("extensions.css"),
@@ -237,6 +237,27 @@ func TestInjectManagementExtensions_AddsPluginLoaderAssets(t *testing.T) {
 		if !strings.Contains(injected, needle) {
 			t.Fatalf("injected html missing %q", needle)
 		}
+	}
+}
+
+func TestInjectManagementExtensions_SkipsDefaultCPAManagerPanel(t *testing.T) {
+	html := []byte("<html><body><main>ok</main></body></html>")
+	defaultRepositories := []string{
+		"",
+		proxyconfig.DefaultPanelGitHubRepository,
+		proxyconfig.DefaultPanelGitHubRepository + "/",
+		proxyconfig.DefaultPanelGitHubRepository + ".git",
+		"https://api.github.com/repos/seakee/CPA-Manager",
+		"https://api.github.com/repos/seakee/CPA-Manager/releases/latest",
+	}
+	for _, repo := range defaultRepositories {
+		repo := repo
+		t.Run(repo, func(t *testing.T) {
+			injected := injectManagementExtensions(html, repo)
+			if string(injected) != string(html) {
+				t.Fatalf("expected default CPA-Manager panel to remain unmodified, got %s", string(injected))
+			}
+		})
 	}
 }
 
@@ -280,7 +301,7 @@ func TestServeManagementExtensionAsset_UnknownAssetReturnsNotFound(t *testing.T)
 
 func TestInjectManagementExtensions_LeavesHTMLWithoutBodyUntouched(t *testing.T) {
 	html := []byte("<html><div>no body</div></html>")
-	injected := injectManagementExtensions(html)
+	injected := injectManagementExtensions(html, "https://github.com/router-for-me/Cli-Proxy-API-Management-Center")
 	if string(injected) != string(html) {
 		t.Fatalf("expected html without body to remain unchanged")
 	}
