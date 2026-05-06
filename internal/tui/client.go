@@ -134,6 +134,11 @@ func (c *Client) GetConfigYAML() (string, error) {
 	return string(data), nil
 }
 
+// GetUsage fetches usage statistics.
+func (c *Client) GetUsage() (map[string]any, error) {
+	return c.getJSON("/v0/management/usage")
+}
+
 // PutConfigYAML uploads new config.yaml content.
 func (c *Client) PutConfigYAML(yamlContent string) error {
 	_, err := c.put("/v0/management/config.yaml", strings.NewReader(yamlContent))
